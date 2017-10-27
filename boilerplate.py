@@ -28,12 +28,12 @@ def get_dist(p1, p2):
 
 def get_cos(p1, p2):
     """Get cosine from point 1 to 2."""
-    return (p2[0]-p1[0]) / abs(complex(*p1) - complex(*p2))
+    return (p2[0]-p1[0]) / hypot(p1[0] - p2[0], p1[1] - p2[1])
 
 
 def get_sin(p1, p2):
     """Get sine from point 1 to 2."""
-    return (p2[1]-p1[1]) / abs(complex(*p1) - complex(*p2))
+    return (p2[1]-p1[1]) / hypot(p1[0] - p2[0], p1[1] - p2[1])
 
 
 def load_image (name, alpha=None, colorkey=None):

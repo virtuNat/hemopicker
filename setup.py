@@ -3,7 +3,7 @@ from cx_Freeze import setup, Executable
 
 # Dependency list.
 build_exe_options = {
-    "packages": ["pygame"], 
+    "packages": ["asyncio", "pygame"], 
     "excludes": ["tkinter", "numpy"],
     "include_files": ["textures"]
 }
