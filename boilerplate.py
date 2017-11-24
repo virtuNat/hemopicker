@@ -7,7 +7,6 @@ from functools import partialmethod
 from traceback import print_exception
 
 import pygame as pg
-
 pg.init()
 
 
@@ -52,24 +51,22 @@ def load_image (name, alpha=None, colorkey=None):
     return image
 
 
-def _dict_setter(obj, *dicts, name, **dargs):
+def _dict_setter(obj, in_dict=None, name='dict', **dargs):
     """Used to set application state and key configurations."""
-    if len(dicts) == 1:
-        if isinstance(dicts[0], dict):
-            setattr(obj, name, dicts[0])
+    if in_dict or isinstance(in_dict, dict):
+        if isinstance(in_dict, dict):
+            setattr(obj, name, in_dict)
         else:
             raise TypeError(
-                'expected dictionary, got {}'.format(
+                'Expected dictionary, got {}.'.format(
                     dicts[0].__class__.__name__
                     )
                 )
-    elif not dicts:
-        if len(dargs) > 0:
-            setattr(obj, name, dargs)
-        else:
-            raise TypeError('expected 1 argument, got 0')
+    elif len(dargs) > 0:
+        setattr(obj, name, dargs)
     else:
-        raise TypeError('expected 1 argument, got {}'.format(len(dicts)))
+        print(in_dict, name, dargs)
+        raise TypeError('None is not a dict instance')
 
 
 class AppExit(BaseException):
@@ -192,6 +189,9 @@ class TextSprite(FreeSprite):
         self._color = newcolor
         self.image = self.font.render(self._text, self.aa, newcolor, self.bg)
 
+    def render(self):
+        return self.font.render(self._text, self.aa, newcolor, self.bg)
+
 
 class State:
     """Base Class for State classes. Used for type comparisons."""
@@ -209,14 +209,16 @@ class State:
 
 
 class AppState(State):
-    """Object template to use as states in the Appli meta-handler."""
+    """Top-level object handler template for use as states in the application."""
 
     def eval_events(self):
         """Dummy event function. Override this."""
         
         # Sample usage:
-        for event in next(self.events):
-            if event.type is pg.KEYDOWN:
+        for event in pg.event.get():
+            if event.type is pg.QUIT:
+                raise AppExit
+            elif event.type is pg.KEYDOWN:
                 try:
                     action = self.CONFIG[event.key]
                 except KeyError:
@@ -238,14 +240,16 @@ class AppState(State):
 
 
 class AsyncState(State):
-    """Async version of the AppState object template."""
+    """Async version of the AppState top-level handler template."""
 
     async def eval_events(self):
         """Dummy event function. Override this."""
         
         # Sample usage:
-        for event in next(self.events):
-            if event.type is pg.KEYDOWN:
+        for event in pg.event.get():
+            if event.type is pg.QUIT:
+                raise AppExit
+            elif event.type is pg.KEYDOWN:
                 try:
                     action = self.CONFIG[event.key]
                 except KeyError:
@@ -267,36 +271,63 @@ class AsyncState(State):
         self.display()
 
 
-class Appli:
-    """Meta-handler of the program."""
-
-    loop = asyncio.get_event_loop()
-    clock = pg.time.Clock()
-    _STATES = {'game': None}
-    do_async = False
+class Window:
+    """Represents the display surface."""
 
     def __init__(self, **kwargs):
         pg.display.set_caption(
             kwargs.get('name', 'pygame window')
             )
-        self.window = pg.display.set_mode(
-            kwargs.get('size', (800, 600)),
-            kwargs.get('flags', 0)
+        self.flags = kwargs.get('flags', 0)
+        self.surf = kwargs.get(
+            'surf',
+            pg.display.set_mode(
+                kwargs.get('size', (200, 200)),
+                self.flags,
+                )
             )
-        self.rect = self.window.get_rect()
+        self.rect = self.surf.get_rect()
 
+    def set_size(self, size):
+        self.surf = pg.display.set_mode(size, self.flags)
+
+    def resize(self, newsize):
+        if self.flags & pg.RESIZABLE:
+            self.surf = pg.display.set_mode(newsize, self.flags)
+            self.rect = self.surf.get_rect()
+        else:
+            raise ValueError('Can\'t resize unresizable window.')
+
+
+class Appli:
+    """Meta-handler of the program."""
+
+    loop = asyncio.get_event_loop()
+    _STATES = {'game': None} 
+
+    def __init__(self, **kwargs):
+        # Application window.
+        try:
+            self.window = kwargs['window']
+        except KeyError:
+            self.window = Window()
+        # Application state system.
         self.set_states(kwargs.get('state_list', {}))
         self._state = kwargs.get('state', 'game')
+        # Application display framerate.
+        self.clock = kwargs.get('clock', pg.time.Clock())
         self.fps_cap = kwargs.get('fps_cap', 30)
+
         self.exit_status = 0
+        self.do_async = False
 
     def __getattr__(self, name):
         """Define getter descriptors."""
         if name == 'state':
-            if self._state in self._STATES:
+            try:
                 return self._STATES[self._state]
-            else:
-                raise KeyError(
+            except KeyError:
+                raise NameError(
                     'application state <{}> is not defined'.format(self._state)
                     )
         elif name == 'STATES':
@@ -309,25 +340,12 @@ class Appli:
         elif name == 'STATES' and value:
             for key, item in value.items():
                 item.owner = self
-                item.events = self._pump_events()
                 item.window = self.window
                 self._STATES[key] = item()
         else:
             super().__setattr__(name, value)
 
     set_states = partialmethod(_dict_setter, name='STATES')
-
-    def _pump_events(self):
-        """Passes events into the event handler of the current state."""
-        while True:
-            events = [ ]
-            for event in pg.event.get():
-                if event.type is pg.QUIT:
-                    # Always allow exit.
-                    raise AppExit
-                else:
-                    events.append(event)
-            yield events
 
     def run(self):
         """Looping run code that allows for error handling."""
@@ -343,11 +361,12 @@ class Appli:
                     self.state.run()
                     self.clock.tick(self.fps_cap)
         except Exception:
-            # Ensure that the exit method is always executed.
+            # Stupid catch-all exception so exit_status can be modified.
             self.exit_status = 1
             print_exception(*sys.exc_info(), file=sys.stdout)
             raise
         finally:
+            # Ensure that the exit method is always executed.
             self.exit()
 
     def exit(self):
@@ -357,3 +376,5 @@ class Appli:
         self.loop.close()
         pg.quit()
         sys.exit(self.exit_status)
+
+Window()

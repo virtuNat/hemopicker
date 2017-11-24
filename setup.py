@@ -12,7 +12,7 @@ base = "Win32GUI" if sys.platform == "win32" else None
 
 setup(
     name = 'Hemopicker',
-    version = '1.0.0',
+    version = '1.1.0',
     description = 'Fantroll Hemopicker Utility',
     author = 'virtuNat',
     license = 'GPL',

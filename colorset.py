@@ -5,17 +5,10 @@ import pygame as pg
 
 from colorop import to_rgb, to_hsv
 from boilerplate import load_image
-from boilerplate import Appli, FreeSprite, TextSprite
-
-app = Appli(
-    name='Fantroll Hemopicker',
-    size=(800, 600),
-    flags=pg.HWSURFACE,
-    state='picker'
-    )
-buttonsheet = load_image('buttons.png', colorkey=0xFF00FF)
+from boilerplate import FreeSprite, TextSprite
 
 pg.scrap.init()
+buttonsheet = load_image('buttons.png', colorkey=0xFF00FF)
 
 
 class Button(FreeSprite):
@@ -133,25 +126,28 @@ class ColorSet:
         pg.Color(0x99004DFF), # Fuchsia
         ]
 
+    HUES = [0, 30, 60, 73, 82, 150, 180, 210, 240, 270, 300, 330]
+
     def __init__(self):
+        # Square button dimensions and spacing.
         buttsize = 39
         buttgap = 40
-
+        # Display font.
         self.font = pg.font.SysFont('couriernew', 25)
+        # Default color (blapck).
+        self._color = pg.Color(0x000000FF)
+        self.base_hue = 0
+        # Color sprites.
         self.panel = FreeSprite(
             pg.Surface((200, 200)),
             pos=(40, 40),
             size=(200, 200),
             )
-        self.mutantbutton = ColorButton(
-            pos=(465, 245),
-            size=(buttsize, buttsize),
-            )
-        self.randombutton = ColorButton(
-            pos=(405, 100),
-            size=(buttsize, buttsize),
-            clippos=(507, 0),
-            )
+        self.oldcolors = [
+            ColorHistoryButton(pos=(250 + 45*(i//5), 40 + buttgap*(i%5)))
+            for i in range(10)
+            ]
+        # Button sprites.
         self.castebuttons = [
             ColorButton(
                 pos=(
@@ -173,41 +169,45 @@ class ColorSet:
                 )
             for i in range(12)
             ]
-        self.oldcolors = [
-            ColorHistoryButton(pos=(250 + 45*(i//5), 40 + buttgap*(i%5)))
-            for i in range(10)
-            ]
+        self.mutantbutton = ColorButton(
+            pos=(465, 260),
+            size=(buttsize, buttsize),
+            )
+        self.randombutton = ColorButton(
+            pos=(405, 100),
+            size=(buttsize, buttsize),
+            clippos=(507, 0),
+            )
         self.copybuttons = [
-            CopyButton((40, 246 + i*buttgap))
+            CopyButton((40, 261 + i*buttgap))
             for i in range(3)
             ]
         self.genbutton = GenerateButton((344, 205))
         self.genallbutton = GenerateAllButton((427, 205))
 
-        self._color = pg.Color(0x000000FF)
+        # Textsprites.
         self.hextext = TextSprite(
             font=self.font,
             text=self.colorhex(),
             aa=True,
             color=pg.Color(0xFFFFFFFF),
-            pos=(90, 251),
+            pos=(90, 266),
             )
         self.rgbtext = TextSprite(
             font=self.font,
             text=self.colorrgb(),
             aa=True,
             color=pg.Color(0xFFFFFFFF),
-            pos=(90, 291),
+            pos=(90, 306),
             )
         self.hsvtext = TextSprite(
             font=self.font,
             text=self.colorhsv(),
             aa=True,
             color=pg.Color(0xFFFFFFFF),
-            pos=(90, 331),
+            pos=(90, 346),
             )
-
-        self.base_hue = 0
+        # Initialize sprite data.
         self.panel.hue = self.base_hue
         self.castebuttons[self.base_hue].active = True
 
@@ -218,7 +218,7 @@ class ColorSet:
 
     def colorrgb(self):
         """Returns the panel's current color as a string."""
-        return 'RGB: {color.r:03d}, {color.g:03d}, {color.b:03d}'.format(color=self._color)
+        return 'RGB: {rgb.r:03d}, {rgb.g:03d}, {rgb.b:03d}'.format(rgb=self._color)
 
     def colorhsv(self):
         """Returns the panel's current hsv color as a string."""
@@ -243,8 +243,10 @@ class ColorSet:
     def swap_color(self, idx):
         """Swap the currently used color with the given history index."""
         self.oldcolors[idx].pressed = True
-        self._color, self.oldcolors[idx].color = self.oldcolors[idx].color, self._color
+        # Reset caste buttons.
         self.castebuttons[self.base_hue].active = False
+        # Perform swap.
+        self._color, self.oldcolors[idx].color = self.oldcolors[idx].color, self._color
         self.panel.hue, self.oldcolors[idx].hue = self.oldcolors[idx].hue, self.panel.hue
         self.base_hue = self.panel.hue
         self.castebuttons[self.base_hue].active = True
@@ -252,30 +254,24 @@ class ColorSet:
     def _generate(self):
         """Randomly generate a blood color."""
         if self.randombutton.active:
-            # The last hue used is valid only when the caste buttons haven't been pressed.
+            # Randomly generate the caste too, if that option's active.
             self.castebuttons[self.base_hue].active = False
             self.base_hue = random.randrange(12)
             self.castebuttons[self.base_hue].active = True
         if not self.mutantbutton.active:
-            hue = self.base_hue * 30
-            # Lime and Olive do not lie on multiples of 30 degrees.
-            if hue == 90:
-                hue = 73
-            elif hue == 120:
-                hue = 82
-            # Induce slight hue variation.
-            hue += random.triangular(0., 7.5, 0.)
+            # Induce slight variations in hue.
+            hue = self.HUES[self.base_hue] + random.triangular(0., 7.5, 0.)
+            # Saturation and value range between defined limits.
             sat = random.triangular(0.8, 1.0, 0.98)
             val = random.triangular(0.4, 0.8, 0.57)
         else:
-            # Throw them a random color.
+            # Make any color possible.
             hue = self.base_hue * 30 + random.uniform(-15., 15.)
             if hue < 0:
                 hue += 360
             sat = random.random()
             val = random.random()
         self.color = to_rgb((hue, sat, val))
-        self.generated = True
 
     def generate(self):
         """Allow the button to update state when generate is used."""
@@ -294,8 +290,6 @@ class ColorSet:
         self.castebuttons[idx].active = True
         self.castebuttons[idx].pressed = True
         self.castebuttons[self.base_hue].active = False
-        # Last command was a caste set, generated is False.
-        self.generated = False
         # Set new caste hue.
         self.base_hue = idx
 
